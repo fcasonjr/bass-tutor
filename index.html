@@ -202,7 +202,8 @@ kbd{background:#0f121a;border:1px solid var(--line);border-radius:4px;padding:0 
       <label class="row"><span>Show on fretboard</span><select id="fretMode"><option value="next">Next notes</option><option value="bar">Whole current bar</option><option value="bar2">Current + next bar</option></select></label>
       <label class="row"><span>Marker label</span><select id="labelMode"><option value="finger">Left-hand finger</option><option value="note">Note name</option><option value="degree">Chord degree</option></select></label>
       <label class="row"><span>Fingering style</span><select id="fingerStyle"><option value="auto">1-2-4 low, 1-2-3-4 high</option><option value="1234">1-2-3-4 (one per fret)</option><option value="124">1-2-4 always</option></select></label>
-      <label class="row"><span>Octave shift</span><select id="octave"><option value="-1">−1 octave</option><option value="0" selected>0</option><option value="1">+1 octave</option></select></label>
+      <label class="row"><span>Octave shift</span><select id="octave"><option value="-2">−2 octaves</option><option value="-1">−1 octave</option><option value="0" selected>0 (as in the file)</option><option value="1">+1 octave</option><option value="2">+2 octaves</option></select></label>
+      <div class="small" id="octInfo"></div>
       <label class="row"><span>Avoid open strings</span><input type="checkbox" id="avoidOpen"></label>
       <label class="row"><span>Left-handed (flip)</span><input type="checkbox" id="lefty"></label>
       <div class="small">Click a fret on the board to hear the note. While paused, click a note in the tab highway to cycle it through other strings/frets.</div>
@@ -620,12 +621,15 @@ function posCandidates(m, tuning, maxFret) {
   return out;
 }
 function fitOctave(pitches, tuning, maxFret) {
-  if (!pitches.length) return 0;
+  // Pick a whole-line octave shift. Stray outliers (a few notes below the lowest string) must not drag the whole line:
+  // if 75%+ of the notes already fit, leave it alone; those outliers are folded note-by-note later.
+  const n = pitches.length; if (!n) return 0;
   const lo = tuning[0], hi = tuning[tuning.length - 1] + maxFret;
-  let mn = Math.min(...pitches), mx = Math.max(...pitches), shift = 0;
-  while (mn + shift < lo) shift += 12;
-  while (mx + shift > hi && mn + shift - 12 >= lo) shift -= 12;
-  return shift;
+  const fits = (sh) => { let c = 0; for (const m of pitches) { const x = m + sh; if (x >= lo && x <= hi) c++; } return c; };
+  if (fits(0) / n >= 0.75) return 0;
+  let best = 0, bc = -1;
+  for (const sh of [0, 12, -12, 24, -24]) { const c = fits(sh) - Math.abs(sh) * 0.001; if (c > bc) { bc = c; best = sh; } }
+  return best;
 }
 function chooseFingering(pitches, tuning, maxFret, opts = {}) {
   const n = pitches.length;
@@ -1233,7 +1237,7 @@ const S = {
   countIn: 1, metro: true, wait: false, waiting: false, waitInst: null,
   view: 'hw', zoom: 6,
   inst: [], results: new Map(), latency: 0.06, anyOct: true, flash: null, lastBass: 85, calibrating: null,
-  overrides: {}
+  overrides: {}, dups: new Set()
 };
 const score = { perfect: 0, good: 0, ok: 0, miss: 0, wrong: 0, combo: 0, best: 0, sumAbs: 0, n: 0 };
 function resetScore() { Object.assign(score, { perfect: 0, good: 0, ok: 0, miss: 0, wrong: 0, combo: 0, best: 0, sumAbs: 0, n: 0 }); S.inst = []; S.results.clear(); }
@@ -1300,13 +1304,20 @@ function overrideKey(ts) { return (S.entry ? S.entry.id : '') + '|' + S.lineTrac
 function getLine(ts) {
   if (lineCache.has(ts)) return lineCache.get(ts);
   const tr = S.song.tracks[S.lineTrack], src = tr.notes;
-  const base = src.map(n => n.m + ts + 12 * S.octave);
+  const base = src.map(n => n.m + ts);
   const shift = fitOctave(base, S.tuning, S.maxFret);
-  const pitches = base.map(m => m + shift);
+  const pitches = base.map(m => m + shift + 12 * S.octave);
   const ov = S.overrides[overrideKey(ts)] || {};
   const pos = chooseFingering(pitches, S.tuning, S.maxFret, { forced: ov, fingerStyle: S.fingerStyle, avoidOpen: S.avoidOpen });
-  const notes = src.map((n, i) => ({ b: n.b, d: n.d, v: n.v, m: S.tuning[pos[i].s] + pos[i].f, s: pos[i].s, f: pos[i].f, fg: pos[i].fg }));
-  const line = { ts, notes, shift };
+  let folded = 0, minF = 99, maxF = 0, lo = 999, hi = 0;
+  const notes = src.map((n, i) => {
+    const m = S.tuning[pos[i].s] + pos[i].f;
+    if (m !== pitches[i]) folded++;
+    if (pos[i].f > 0) { minF = Math.min(minF, pos[i].f); maxF = Math.max(maxF, pos[i].f); }
+    lo = Math.min(lo, m); hi = Math.max(hi, m);
+    return { b: n.b, d: n.d, v: n.v, m, s: pos[i].s, f: pos[i].f, fg: pos[i].fg };
+  });
+  const line = { ts, notes, shift, folded, minF: minF === 99 ? 0 : minF, maxF, lo, hi };
   lineCache.set(ts, line);
   return line;
 }
@@ -1692,11 +1703,11 @@ function selectSong(id, keepPlaying) {
   let li = e.lineKey ? song.tracks.findIndex(t => t.key === e.lineKey) : -1;
   if (li < 0) li = guessBassTrack(song.tracks);
   if (li < 0) { toast('That file has no pitched tracks to practise.'); return false; }
-  S.entry = e; S.song = song; S.lineTrack = li;
+  S.entry = e; S.song = song; S.lineTrack = li; computeDups();
   const bb = song.barBeats;
   if (song.chordBars) S.chordBars = song.chordBars;
   else if (e.chordText) S.chordBars = parseChart(e.chordText, bb);
-  else S.chordBars = detectChords(song.tracks.filter((t, i) => i !== li), song.tracks[li].notes, bb, song.lengthBeats);
+  else S.chordBars = detectChords(song.tracks.filter((t, i) => i !== li && !S.dups.has(i)), song.tracks[li].notes, bb, song.lengthBeats);
   const nb = Math.ceil(song.lengthBeats / bb - 1e-6);
   S.startBeat = 0; S.iterBase = 0; S.loopOn = false; S.loopFrom = 1; S.loopTo = nb; S.selEnd = false; S.ts = 0;
   invalidateLines(); chartVersion++; NT.key = ''; fbKey = '';
@@ -1704,6 +1715,16 @@ function selectSong(id, keepPlaying) {
   resetScore();
   fillLineTrackSelect(); syncSongUI(); syncLoopUI(); renderChart(0); fillSongSelect();
   return true;
+}
+function computeDups() { // other tracks that are an exact copy of the practice line are not played again in the backing
+  S.dups = new Set();
+  const L = S.song.tracks[S.lineTrack];
+  S.song.tracks.forEach((t, i) => {
+    if (i === S.lineTrack || t.drums || t.notes.length !== L.notes.length) return;
+    const step = Math.max(1, t.notes.length >> 6);
+    for (let k = 0; k < t.notes.length; k += step) if (t.notes[k].m !== L.notes[k].m || Math.abs(t.notes[k].b - L.notes[k].b) > 0.02) return;
+    S.dups.add(i);
+  });
 }
 function fillLineTrackSelect() {
   const sel = $('lineTrack'); sel.innerHTML = '';
@@ -1786,7 +1807,7 @@ function schedule(e0, e1) {
           A.play('bass', n.m, when(n.b), n.d / S.bps, n.v);
           if (Mic.on) S.inst.push({ e: seg.e0 + (n.b - seg.p0), b: n.b, iter, idx: i, midi: n.m, res: null });
         }
-      } else {
+      } else if (!S.dups.has(ti)) {
         for (let i = lowerBound(tr.notes, seg.p0 - 1e-6); i < tr.notes.length && tr.notes[i].b < seg.p1 - 1e-9; i++) {
           const n = tr.notes[i]; A.play('harm', n.m + ts, when(n.b), n.d / S.bps, n.v);
         }
@@ -1957,6 +1978,8 @@ function frame() {
     const nx = info.line.notes[info.cur + 1];
     setText('nextInfo', nx ? `Next: ${noteName(nx.m)} (${pcName(S.tuning[nx.s])} string, ${nx.f === 0 ? 'open' : 'fret ' + nx.f}, finger ${nx.fg})` : '');
   } else { setText('nowName', '–'); setText('nowInfo', 'Press Start'); setText('nextInfo', ''); }
+  { const ln = info.line, fr = ln.maxF ? `frets ${ln.minF}–${ln.maxF}` : 'open strings only';
+    setText('octInfo', `Line sounds ${noteName(ln.lo)}–${noteName(ln.hi)} on your bass (${fr})` + (ln.shift ? ` · auto-moved ${ln.shift > 0 ? 'up' : 'down'} ${Math.abs(ln.shift / 12)} octave${Math.abs(ln.shift) > 12 ? 's' : ''}` : '') + (ln.folded ? ` · ${ln.folded} note${ln.folded > 1 ? 's' : ''} outside the fretboard shown an octave away` + (ln.folded > ln.notes.length * 0.04 && S.tuning.length === 4 ? ' — try the 5-string or half-step-down tuning' : '') : '')); }
   setText('chordNow', info.chord ? chordName(info.chord, info.ts) : '');
   // chart
   if (chartTs !== info.ts) renderChart(info.ts);
@@ -2130,7 +2153,7 @@ function wire() {
   on('btnWhole', 'click', () => { $('loopOn').checked = false; setLoopFromUI(); S.selEnd = false; seekTo(0); });
   on('songSel', 'change', () => selectSong($('songSel').value));
   on('lineTrack', 'change', () => {
-    S.lineTrack = parseInt($('lineTrack').value); invalidateLines(); fbKey = ''; NT.key = ''; stopPlay(true);
+    S.lineTrack = parseInt($('lineTrack').value); computeDups(); invalidateLines(); fbKey = ''; NT.key = ''; stopPlay(true);
     if (S.entry.kind === 'midi' && !S.entry.builtin) { S.entry.lineKey = S.song.tracks[S.lineTrack].key; persistUser(); }
   });
   on('btnApplyChords', 'click', () => {
