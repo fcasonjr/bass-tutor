@@ -91,6 +91,11 @@ kbd{background:#0f121a;border:1px solid var(--line);border-radius:4px;padding:0 
 .help h3{margin:12px 0 4px}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#2a3044;border:1px solid #47506b;padding:9px 16px;border-radius:10px;z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:90%}
 
+#chartBox>#chart{padding:0 12px 12px}
+#chartBox>summary span{margin-left:8px;font-weight:400}
+#chartBox>summary{justify-content:flex-start;gap:0}
+#chartBox>summary::after{margin-left:auto}
+
 </style>
 </head>
 <body>
@@ -141,10 +146,10 @@ kbd{background:#0f121a;border:1px solid var(--line);border-radius:4px;padding:0 
       <div class="small" style="margin-top:6px">Tip: click a bar in the notation or chord chart to set the loop start; click a second bar to set the end. Press <kbd>Space</kbd> to start/pause.</div>
     </div>
 
-    <div class="card">
-      <div class="small" style="margin-bottom:6px">Chord chart <span id="chartNote"></span></div>
+    <details class="chartbox" id="chartBox" open>
+      <summary>Chord chart <span class="small" id="chartNote"></span></summary>
       <div id="chart"></div>
-    </div>
+    </details>
 
     <div class="card">
       <div class="score">
@@ -1471,17 +1476,18 @@ function drawHighway() {
       c.fillText(isBar ? String(Math.round(b / bb) + 1) : String((k % beatsPerBar) + 1), x + 3, isBar ? 11 : 37);
     }
     const bar0 = Math.floor(seg.p0 / bb + 1e-9), bar1 = Math.floor((seg.p1 - 1e-9) / bb);
+    const labels = []; let fallback = null;
     for (let bar = bar0; bar <= bar1; bar++) {
       const list = S.chordBars[bar]; if (!list) continue;
       for (const ch of list) {
         const b = bar * bb + ch.at;
-        let x;
-        if (b >= seg.p0 - 1e-9 && b < seg.p1 - 1e-9) x = hitX + (seg.e0 + (b - seg.p0) - eNow) * ppb;
-        else if (si === 0 && b < seg.p0 && bar === bar0 && chordAt(seg.p0) === ch) x = 10;
-        else continue;
-        c.fillStyle = '#5aa9ff'; c.font = '700 15px system-ui'; c.textAlign = 'left'; c.fillText(chordName(ch, ts), x + 4, 28);
+        if (b >= seg.p0 - 1e-9 && b < seg.p1 - 1e-9) labels.push({ x: hitX + (seg.e0 + (b - seg.p0) - eNow) * ppb, t: chordName(ch, ts) });
+        else if (si === 0 && b < seg.p0 && bar === bar0 && chordAt(seg.p0) === ch) fallback = { x: 10, t: chordName(ch, ts) };
       }
     }
+    if (fallback && !labels.some(l => l.x < 90)) labels.push(fallback);
+    c.fillStyle = '#5aa9ff'; c.font = '700 15px system-ui'; c.textAlign = 'left';
+    for (const l of labels) c.fillText(l.t, l.x + 4, 28);
     let i = lowerBound(notes, seg.p0 - 1e-6);
     for (; i < notes.length && notes[i].b < seg.p1 - 1e-9; i++) {
       const nt = notes[i], x = hitX + (seg.e0 + (nt.b - seg.p0) - eNow) * ppb;
@@ -1978,7 +1984,7 @@ function saveSettings() {
   saveJSON(SKEY, {
     tuningName: S.tuningName, maxFret: S.maxFret, lefty: S.lefty, fretMode: S.fretMode, labelMode: S.labelMode, fingerStyle: S.fingerStyle,
     avoidOpen: S.avoidOpen, octave: S.octave, countIn: S.countIn, metro: S.metro, zoom: S.zoom, view: S.view, latency: S.latency, anyOct: S.anyOct,
-    useSharps, gate: Mic.gate, speed: S.speed, keyStep: S.keyStep, wait: S.wait, vol: Audio_.vol
+    useSharps, chartOpen: $('chartBox').open, gate: Mic.gate, speed: S.speed, keyStep: S.keyStep, wait: S.wait, vol: Audio_.vol
   });
 }
 function applySettings() {
@@ -1986,6 +1992,7 @@ function applySettings() {
   if (TUNINGS[s.tuningName]) { S.tuningName = s.tuningName; S.tuning = TUNINGS[s.tuningName]; }
   for (const k of ['maxFret', 'lefty', 'fretMode', 'labelMode', 'fingerStyle', 'avoidOpen', 'octave', 'countIn', 'metro', 'zoom', 'view', 'latency', 'anyOct', 'speed', 'keyStep', 'wait']) if (s[k] !== undefined) S[k] = s[k];
   if (s.useSharps !== undefined) useSharps = s.useSharps;
+  if (s.chartOpen === false) $('chartBox').open = false;
   if (s.gate) Mic.gate = s.gate;
   if (s.vol) Object.assign(Audio_.vol, s.vol);
 }
@@ -2114,6 +2121,7 @@ function cycleOverride(hit) {
 /* ---------- wiring ---------- */
 function wire() {
   const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
+  on('chartBox', 'toggle', saveSettings);
   on('btnStart', 'click', () => { if (S.paused) startPlay({ noCount: true, keep: true }); else startPlay(); });
   on('btnPause', 'click', pausePlay);
   on('btnStop', 'click', () => stopPlay());

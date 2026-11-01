@@ -4,6 +4,8 @@ A browser-based practice app for bass guitar, built around jazz walking bass lin
 
 Everything lives in one file, `index.html`. There is no build step and there are no dependencies.
 
+![Bass Tutor showing the fretboard, scrolling tab and chord chart](screenshot.png)
+
 ## Features
 
 **See the line**
