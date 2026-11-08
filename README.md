@@ -21,12 +21,14 @@ Everything lives in one file, `index.html`. There is no build step and there are
 - **Walking-bass generator:** type a chord chart such as `Dm7 | G7 | Cmaj7`, or pick a preset (jazz blues, ii–V–I, Autumn Leaves changes, rhythm changes, minor blues, bossa). You get a walking, two-feel or bossa line with piano and drums. "New variation" rolls a different line over the same chords, and you can export the result as MIDI.
 
 **Lessons**
-- **Lesson phrases:** 11 short bebop-style phrases, all written in C and playable in any key. Press **Lessons**, pick a key, and the phrase loops with piano and drums behind it.
+- **Lesson phrases:** 18 short bebop-style phrases, all written in C and playable in any key. Press **Lessons**, pick a key, and the phrase loops with piano and drums behind it.
 - **Bebop scales:** dominant (Mixolydian + natural 7), major (+ ♯5) and minor/Dorian (+ natural 7), each played up from the root and back down. The passing tone keeps the chord tones on beats 1 and 3.
 - **Building blocks:** arpeggios with chromatic approach notes, enclosures, scale fragments across a ii–V–I, a minor ii–V–i, a iii–vi–ii–V turnaround and a blues phrase.
+- **More vocabulary:** four minor ii–V–i lines, and a Rhythmic variations group (long–short pairs, triplet pick-ups, a two-feel that turns into walking, and eighth-note bebop scales).
 - Each phrase comes with a short note on what to listen for. Turn on chord-degree labels (R, 3, 5, ♭7…) to see how the line outlines the chords, and use "all 12 keys" to move up a fourth every pass.
 
 **Practice tools**
+- **Key cycling:** after each loop pass, stay in the key or move up/down a fourth (cycle of 4ths/5ths), a half or whole step, a minor third or a tritone. Choose how many loop passes to play in each key, and optionally speed up by 5% or 10% at each key change (up to 150%; your speed returns when you stop).
 - Loop any bar range, slow the tempo down to 25%, and use a count-in and metronome.
 - Transpose, or have the loop move up a fourth (or another interval) each pass to cover all 12 keys. Fingering is recalculated for each key.
 - Mixer: mute the bass to play it yourself, or solo it to study it.

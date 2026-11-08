@@ -191,7 +191,9 @@ dialog#dlgLessons{max-width:780px}
       <label class="row"><span>Metronome</span><input type="checkbox" id="metro" checked></label>
       <label class="row"><span>Transpose</span><select id="transpose"></select></label>
       <label class="row"><span>After each loop pass</span><select id="keyCycle">
-        <option value="0">Stay in the same key</option><option value="5">Up a fourth (cycle of 4ths)</option><option value="7">Down a fourth (cycle of 5ths)</option><option value="1">Up a half step</option><option value="2">Up a whole step</option><option value="-1">Down a half step</option></select></label>
+        <option value="0">Stay in the same key</option><option value="5">Up a fourth (cycle of 4ths)</option><option value="7">Down a fourth (cycle of 5ths)</option><option value="1">Up a half step</option><option value="2">Up a whole step</option><option value="3">Up a minor third</option><option value="6">Up a tritone</option><option value="-1">Down a half step</option><option value="-2">Down a whole step</option></select></label>
+      <label class="row"><span>Loop passes in each key</span><select id="keyHold"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select></label>
+      <label class="row"><span>Speed up after each key change</span><select id="rampSel"><option value="0">No</option><option value="5">+5%</option><option value="10">+10%</option></select></label>
       <label class="row"><span>Use ♯ instead of ♭</span><input type="checkbox" id="useSharp"></label>
       <label class="row"><span>“Wait for me” (needs Listen)</span><input type="checkbox" id="wait"></label>
     </div></details>
@@ -1036,6 +1038,7 @@ const PHRASE_CATS = [
   { id: 'scales', title: 'Bebop scales', blurb: 'Eight-note scales: one chromatic passing tone keeps the chord tones on beats 1 and 3, whether you climb or descend.' },
   { id: 'major', title: 'ii–V–I (major)', blurb: 'Arpeggios, chromatic approaches, enclosures and scale fragments joining the chords.' },
   { id: 'minor', title: 'ii–V–i (minor)', blurb: 'The same ideas on the minor ii–V–i.' },
+  { id: 'rhythm', title: 'Rhythmic variations', blurb: 'The same ii–V–I with different rhythms: long–short pairs, triplet pick-ups, a two-feel that turns into walking, and eighth-note bebop lines.' },
   { id: 'forms', title: 'Turnarounds and blues', blurb: 'Using the vocabulary on common forms.' }
 ];
 
@@ -1093,6 +1096,48 @@ const PHRASES = [
     chart: 'Dm7♭5 | G7alt | Cm7 | Cm7',
     bars: ['D2 F2 A♭2 F#2', 'G2 F2 D♭2 B1', 'C2 E♭2 G2 A♭2', 'B♭2 G2 E♭2 C#2'],
     tip: 'Bar 1 outlines Dm7♭5 (D, F, A♭) and approaches G from below. Over G7alt the ♭5 (D♭) sits on beat 3, then B approaches C from a half step below. On Cm7, climb the arpeggio, add the ♭6 (A♭), and come back down the ♭7–5–♭3 before approaching D.'
+  },
+  {
+    id: 'minor-arp-chromatic', cat: 'minor', title: 'Minor ii–V–i: arpeggios with half-step approaches', bpm: 105, strong: true,
+    chart: 'Dm7♭5 | G7 | Cm7 | Cm7',
+    bars: ['D2 F2 A♭2 G♭2', 'G2 F2 D2 B1', 'C2 E♭2 G2 B♭2', 'C3 B♭2 G2 E♭2'],
+    tip: 'Bar 1 outlines Dm7♭5 and G♭ slides up a half step into G. On G7 come down the arpeggio (G, ♭7, 5th) so B is a half step below the C. Then climb Cm7 and come back down, ending on E♭ one half step above D for the repeat.'
+  },
+  {
+    id: 'minor-bebop-iiV', cat: 'minor', title: 'Minor ii–V–i: descending scale into a Dorian bebop climb', bpm: 105, strong: true,
+    chart: 'Dm7♭5 | G7 | Cm7 | Cm7',
+    bars: ['F2 E♭2 D2 C2', 'D2 C2 B1 G1', 'C2 D2 E♭2 F2', 'G2 A2 B♭2 A♭2'],
+    tip: 'Bar 1 steps down from the ♭3 and bar 2 runs down G7 (5th, ♭7, 3rd, root). Bar 3 starts the C Dorian climb with the chord tones on 1 and 3. Bar 4 continues the climb (A is the passing note) and finishes on A♭, a step above G, ready to fall to F on the repeat.'
+  },
+  {
+    id: 'minor-descending', cat: 'minor', title: 'Minor ii–V–i: arpeggios falling, then rising', bpm: 105, strong: true,
+    chart: 'Dm7♭5 | G7 | Cm7 | Cm7',
+    bars: ['A♭2 F2 D2 C2', 'F2 D2 B1 G1', 'C2 E♭2 G2 A♭2', 'E♭2 G2 C3 G2'],
+    tip: 'Let the two chords fall: Dm7♭5 from its ♭5, G7 from its ♭7 down to the root. Then climb Cm7 (A♭ is the ♭6 passing note) and go up through the arpeggio to high C, finishing on G, a half step below the A♭ that starts the repeat.'
+  },
+  {
+    id: 'rhythm-dotted', cat: 'rhythm', title: 'Long–short pairs (dotted quarter + eighth)', bpm: 100, strong: true,
+    chart: 'Dm7 | G7 | Cmaj7 | Cmaj7',
+    bars: ['D2:1.5 E2:.5 F2:1.5 A2:.5', 'G2:1.5 F2:.5 D2:1.5 B1:.5', 'C2:1.5 D2:.5 E2:1.5 G2:.5', 'A2:1.5 G2:.5 E2:1.5 C#2:.5'],
+    tip: 'Each beat pair is a long note followed by a short one, so the chord tones still sit on beats 1 and 3. Count “1 (2) and, 3 (4) and” and let the short note lead into the next one. Try it with the click on beats 2 and 4 only.'
+  },
+  {
+    id: 'rhythm-triplet-pickup', cat: 'rhythm', title: 'Quarter notes with a triplet pick-up on beat 4', bpm: 100, strong: true,
+    chart: 'Dm7 | G7 | Cmaj7 | Cmaj7',
+    bars: ['D2 F2 A2 B♭2:.3333333 A2:.3333333 A♭2:.3333333', 'G2 F2 D2 D♭2:.3333333 C2:.3333333 B1:.3333333', 'C2 E2 G2 A2:.3333333 G2:.3333333 F#2:.3333333', 'E2 G2 B2 A2:.3333333 G2:.3333333 F2:.3333333'],
+    tip: 'Beats 1 to 3 are plain quarter notes. Beat 4 holds three notes in the time of one, a quick chromatic slide that lands on the next chord. Feel the pulse of beat 4 split in three: tri-pl-et.'
+  },
+  {
+    id: 'rhythm-twofeel-walk', cat: 'rhythm', title: 'Two-feel into walking', bpm: 110, strong: true,
+    chart: 'Dm7 | G7 | Cmaj7 | Cmaj7',
+    bars: ['D2:2 A2:2', 'G2:2 D2:2', 'C2:2 G2:2', 'E2 G2 A2 F2'],
+    tip: 'Three bars of half notes (root and fifth, the two-feel), then one bar of walking quarter notes to push into the repeat. The feel change is what makes it sound like a real chorus.'
+  },
+  {
+    id: 'rhythm-eighths', cat: 'rhythm', title: 'Eighth-note bebop scales: ii–V–I', bpm: 90, strong: true,
+    chart: 'Dm7 | G7 | Cmaj7 | Cmaj7',
+    bars: ['D2:.5 E2:.5 F2:.5 G2:.5 A2:.5 B2:.5 C3:.5 C#3:.5', 'D3:.5 C3:.5 B2:.5 A2:.5 G2:.5 F#2:.5 F2:.5 E2:.5', 'C2:.5 D2:.5 E2:.5 F2:.5 G2:.5 A♭2:.5 A2:.5 B2:.5', 'C3:.5 B2:.5 A2:.5 A♭2:.5 G2:.5 F2:.5 E2:.5 D2:.5'],
+    tip: 'A full bebop scale per bar in eighth notes: Dm7 (minor bebop), G7 (dominant bebop, down from D) and C (major bebop up and down). Start slowly. Even in eighths the chord tones fall on beats 1 and 3, so the passing notes are always off the strong beats.'
   },
   {
     id: 'turnaround', cat: 'forms', title: 'Turnaround: iii–vi–ii–V with chromatic approaches', bpm: 120, strong: true,
@@ -1394,7 +1439,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const S = {
   song: null, entry: null, lineTrack: 0, chordBars: [],
   tuningName: 'Standard (E A D G)', tuning: TUNINGS['Standard (E A D G)'], maxFret: 21,
-  octave: 0, ts: 0, keyStep: 0, fingerStyle: 'auto', avoidOpen: false, lefty: false,
+  octave: 0, ts: 0, keyStep: 0, keyHold: 1, ramp: 0, rampStart: null, keyIdx: null, fingerStyle: 'auto', avoidOpen: false, lefty: false,
   fretMode: 'next', labelMode: 'finger',
   speed: 1, loopOn: false, loopFrom: 1, loopTo: 1, selEnd: false,
   startBeat: 0, playing: false, t0: 0, bps: 2, schedE: 0, iterBase: 0, cb: 0, timer: null,
@@ -1407,7 +1452,7 @@ const score = { perfect: 0, good: 0, ok: 0, miss: 0, wrong: 0, combo: 0, best: 0
 function resetScore() { Object.assign(score, { perfect: 0, good: 0, ok: 0, miss: 0, wrong: 0, combo: 0, best: 0, sumAbs: 0, n: 0 }); S.inst = []; S.results.clear(); }
 
 const normTs = (v) => ((((v + 6) % 12) + 12) % 12) - 6;
-const tsFor = (iter) => normTs(S.ts + iter * S.keyStep);
+const tsFor = (iter) => normTs(S.ts + Math.floor(iter / Math.max(1, S.keyHold)) * S.keyStep);
 const barBeatsOf = () => (S.song ? S.song.barBeats : 4);
 function clickUnit() {
   const s = S.song; if (!s) return 1;
@@ -1993,7 +2038,8 @@ function pausePlay() {
 function stopPlay(silent) {
   const was = S.playing || S.paused || S.waiting;
   S.playing = false; S.paused = false; S.waiting = false; S.waitInst = null;
-  clearInterval(S.timer);
+  clearInterval(S.timer); S.keyIdx = null;
+  if (S.rampStart != null) { S.speed = S.rampStart; S.rampStart = null; $('speed').value = Math.round(S.speed * 100); updateSpeedLabel(); }
   if (Audio_.ctx) Audio_.killSession();
   if (was && !silent) finishRun();
   const L = loopRange();
@@ -2134,6 +2180,15 @@ function frame() {
   if (!S.song) return;
   const eNow = getE();
   if (S.playing && !loopRange() && S.startBeat + eNow >= S.song.lengthBeats + 0.6) { finishSong(); return; }
+  if (S.playing && S.ramp > 0) {
+    const ki = Math.floor((currentPos().iter + S.iterBase) / Math.max(1, S.keyHold));
+    if (S.keyIdx != null && ki > S.keyIdx) {
+      if (S.rampStart == null) S.rampStart = S.speed;
+      S.speed = Math.min(1.5, Math.round((S.speed + S.ramp / 100) * 100) / 100);
+      $('speed').value = Math.round(S.speed * 100); updateSpeedLabel(); S.keyIdx = ki; retime(); return;
+    }
+    S.keyIdx = ki;
+  } else if (!S.playing) S.keyIdx = null;
   if (Mic.on && (S.playing || S.waiting)) checkMisses(eNow);
   const info = updateFretboard();
   // readouts
@@ -2174,13 +2229,13 @@ function saveSettings() {
   saveJSON(SKEY, {
     tuningName: S.tuningName, maxFret: S.maxFret, lefty: S.lefty, fretMode: S.fretMode, labelMode: S.labelMode, fingerStyle: S.fingerStyle,
     avoidOpen: S.avoidOpen, octave: S.octave, countIn: S.countIn, metro: S.metro, zoom: S.zoom, view: S.view, latency: S.latency, anyOct: S.anyOct,
-    useSharps, chartOpen: $('chartBox').open, gate: Mic.gate, speed: S.speed, keyStep: S.keyStep, wait: S.wait, vol: Audio_.vol
+    useSharps, chartOpen: $('chartBox').open, gate: Mic.gate, speed: S.speed, keyStep: S.keyStep, keyHold: S.keyHold, ramp: S.ramp, wait: S.wait, vol: Audio_.vol
   });
 }
 function applySettings() {
   const s = loadJSON(SKEY, null); if (!s) return;
   if (TUNINGS[s.tuningName]) { S.tuningName = s.tuningName; S.tuning = TUNINGS[s.tuningName]; }
-  for (const k of ['maxFret', 'lefty', 'fretMode', 'labelMode', 'fingerStyle', 'avoidOpen', 'octave', 'countIn', 'metro', 'zoom', 'view', 'latency', 'anyOct', 'speed', 'keyStep', 'wait']) if (s[k] !== undefined) S[k] = s[k];
+  for (const k of ['maxFret', 'lefty', 'fretMode', 'labelMode', 'fingerStyle', 'avoidOpen', 'octave', 'countIn', 'metro', 'zoom', 'view', 'latency', 'anyOct', 'speed', 'keyStep', 'keyHold', 'ramp', 'wait']) if (s[k] !== undefined) S[k] = s[k];
   if (s.useSharps !== undefined) useSharps = s.useSharps;
   if (s.chartOpen === false) $('chartBox').open = false;
   if (s.gate) Mic.gate = s.gate;
@@ -2192,7 +2247,7 @@ function syncSettingsUI() {
   $('countIn').value = S.countIn; $('metro').checked = S.metro; $('zoom').value = S.zoom; $('useSharp').checked = useSharps;
   $('anyOct').checked = S.anyOct; $('latency').value = Math.round(S.latency * 1000); $('latLbl').textContent = Math.round(S.latency * 1000) + ' ms';
   $('gate').value = Math.round(Mic.gate * 1000); $('gateLbl').textContent = (Mic.gate * 1000).toFixed(0);
-  $('speed').value = Math.round(S.speed * 100); $('keyCycle').value = S.keyStep; $('wait').checked = S.wait;
+  $('speed').value = Math.round(S.speed * 100); $('keyCycle').value = S.keyStep; $('keyHold').value = S.keyHold; $('rampSel').value = S.ramp; $('wait').checked = S.wait;
   $('vBass').value = Audio_.vol.bass * 100; $('vHarm').value = Audio_.vol.harm * 100; $('vDrums').value = Audio_.vol.drums * 100;
   $('vClick').value = Audio_.vol.click * 100; $('vMaster').value = Audio_.vol.master * 100;
   setView(S.view);
@@ -2352,7 +2407,7 @@ function wire() {
   on('btnStart', 'click', () => { if (S.paused) startPlay({ noCount: true, keep: true }); else startPlay(); });
   on('btnPause', 'click', pausePlay);
   on('btnStop', 'click', () => stopPlay());
-  on('speed', 'input', () => { S.speed = $('speed').value / 100; updateSpeedLabel(); retime(); saveSettings(); });
+  on('speed', 'input', () => { S.rampStart = null; S.speed = $('speed').value / 100; updateSpeedLabel(); retime(); saveSettings(); });
   on('loopOn', 'change', setLoopFromUI); on('loopFrom', 'change', setLoopFromUI); on('loopTo', 'change', setLoopFromUI);
   on('btnWhole', 'click', () => { $('loopOn').checked = false; setLoopFromUI(); S.selEnd = false; seekTo(0); });
   on('songSel', 'change', () => selectSong($('songSel').value));
@@ -2426,6 +2481,8 @@ function wire() {
   on('countIn', 'change', () => { S.countIn = parseInt($('countIn').value); saveSettings(); });
   on('metro', 'change', () => { S.metro = $('metro').checked; saveSettings(); if (S.playing) retime(); });
   on('transpose', 'change', () => { S.ts = parseInt($('transpose').value); invalidateLines(); fbKey = ''; NT.key = ''; if (S.playing) retime(); });
+  on('keyHold', 'change', () => { S.keyHold = parseInt($('keyHold').value); saveSettings(); if (S.playing) retime(); });
+  on('rampSel', 'change', () => { S.ramp = parseInt($('rampSel').value); saveSettings(); });
   on('keyCycle', 'change', () => { S.keyStep = parseInt($('keyCycle').value); saveSettings(); if (S.playing) retime(); });
   on('useSharp', 'change', () => { useSharps = $('useSharp').checked; fbKey = ''; NT.key = ''; buildFretboard(); renderChart(chartTs || 0); fillTranspose(); saveSettings(); });
   const fretRelated = () => { invalidateLines(); fbKey = ''; NT.key = ''; saveSettings(); };
