@@ -96,6 +96,14 @@ kbd{background:#0f121a;border:1px solid var(--line);border-radius:4px;padding:0 
 #chartBox>summary{justify-content:flex-start;gap:0}
 #chartBox>summary::after{margin-left:auto}
 
+dialog#dlgLessons{max-width:780px}
+.lesson{background:#0f121a;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;display:flex;flex-direction:column;gap:4px}
+.lesson .lh{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.lesson .lchords{color:var(--accent2);font-weight:650}
+.lesson .ltip{color:var(--text);font-size:13px;line-height:1.45}
+.tag{background:#16314f;color:#9cc7ff;border-radius:99px;padding:1px 8px;font-size:11.5px}
+#dlgLessons h3{margin:14px 0 2px}
+
 </style>
 </head>
 <body>
@@ -105,6 +113,7 @@ kbd{background:#0f121a;border:1px solid var(--line);border-radius:4px;padding:0 
   <span id="songChip" class="chip"></span>
   <div class="spacer"></div>
   <button id="btnAdd">Add song (MIDI)</button>
+  <button id="btnLessons">📖 Lessons</button>
   <button id="btnGen">Generate walking line</button>
   <button id="btnMic">🎤 Listen</button>
   <button id="btnHelp">Help</button>
@@ -237,6 +246,25 @@ kbd{background:#0f121a;border:1px solid var(--line);border-radius:4px;padding:0 
   <div class="actions"><button id="addCancel">Cancel</button><button id="addOk" class="primary" disabled>Add &amp; practice</button></div>
 </dialog>
 
+<dialog id="dlgLessons">
+  <h2>Lesson phrases</h2>
+  <div class="small">Short bebop-style walking-bass phrases, written in C. Pick a key, press Practice, and the phrase loops with piano and drums behind it. Everything else (speed, loop, mixer, Listen scoring) works as usual.</div>
+  <div class="grid2" style="margin-top:10px">
+    <label class="col"><span>Key</span><select id="lsKey"></select></label>
+    <label class="col"><span>Starting speed</span><select id="lsSpeed"><option value="60">60%</option><option value="75" selected>75%</option><option value="90">90%</option><option value="100">100%</option></select></label>
+    <label class="row"><span>Move up a fourth each pass (all 12 keys)</span><input type="checkbox" id="lsAll12"></label>
+    <label class="row"><span>Label notes by chord degree (R, 3, 5, ♭7…)</span><input type="checkbox" id="lsDeg" checked></label>
+  </div>
+  <details style="margin-top:10px"><summary>The idea in brief</summary><div class="body small" style="color:var(--text)">
+    <p><b>Bebop scales</b> are ordinary scales with one extra chromatic passing tone, which makes eight notes. In steady quarter notes, eight notes fit two bars, so the chord tones keep landing on beats 1 and 3 whether you go up or down.</p>
+    <p><b>Dominant bebop:</b> 1 2 3 4 5 6 ♭7 7 (Mixolydian + natural 7).<br><b>Major bebop:</b> 1 2 3 4 5 ♯5 6 7 (major + ♯5).<br><b>Minor (Dorian) bebop:</b> 1 2 ♭3 4 5 6 ♭7 7 (Dorian + natural 7).</p>
+    <p>Good lines mix these scale runs with <b>arpeggios</b> (root–3rd–5th–7th), <b>chromatic approaches</b> (a half step above or below the next chord's root, on beat 4) and <b>enclosures</b> (a note above and a note below the target). The target is usually a chord tone of the next chord, on beat 1.</p>
+    <p>Other books and teachers sometimes add a different passing tone to the minor bebop scale (a natural 3rd). This app uses the natural 7, because it keeps the chord tones on beats 1 and 3 when descending from the root too.</p>
+  </div></details>
+  <div id="lsList" style="max-height:48vh;overflow:auto;margin-top:8px;padding-right:6px"></div>
+  <div class="actions"><button id="lsClose">Close</button></div>
+</dialog>
+
 <dialog id="dlgGen">
   <h2>Generate a walking bass line</h2>
   <div class="small">Type a chord chart (bars separated by <kbd>|</kbd>, two chords in a bar separated by a space) or pick a preset. You get a bass line plus piano and drums to play along with. Transpose or loop it like any other song.</div>
@@ -262,6 +290,7 @@ kbd{background:#0f121a;border:1px solid var(--line);border-radius:4px;padding:0 
   <h3>Songs</h3>
   <ul>
     <li><b>Add song (MIDI)</b>: load any .mid file and pick the bass track. The other tracks (and drums) play as backing. Pick a different track to practice any other line.</li>
+    <li><b>Lessons</b>: bebop scales, arpeggios with approach notes, enclosures, a turnaround and a blues phrase. Pick a key and press Practice; the phrase loops with a rhythm section. Turn on <i>all 12 keys</i> to move up a fourth every pass.</li>
     <li><b>Generate walking line</b>: type changes (e.g. <kbd>Dm7 | G7 | Cmaj7</kbd>) and get a walking, two-feel or bossa line with piano and drums. <i>New variation</i> rolls a different line over the same chords; <i>Export MIDI</i> saves it.</li>
     <li>Chords for imported files are guessed from the other tracks, so check them and fix them in the Chords box.</li>
   </ul>
@@ -994,6 +1023,141 @@ function generateSong(o) {
   };
 }
 
+/* ===== Lesson phrases: bebop-scale walking-bass vocabulary =====
+   All phrases are written in C (sounding pitch, C2 = MIDI 36) and are transposed by the app's Transpose / key-cycle tools.
+   Note tokens:  Name+octave[:beats]   e.g.  A♭2   F#2:.667   (r:1 = rest).  Each bar must add up to 4 beats.   */
+const BEBOP_SCALES = {
+  dom: { name: 'Dominant bebop', degrees: [0, 2, 4, 5, 7, 9, 10, 11], formula: '1 2 3 4 5 6 ♭7 7', basis: 'Mixolydian + natural 7' },
+  maj: { name: 'Major bebop', degrees: [0, 2, 4, 5, 7, 8, 9, 11], formula: '1 2 3 4 5 ♯5 6 7', basis: 'Major scale + ♯5 (♭6)' },
+  min: { name: 'Minor (Dorian) bebop', degrees: [0, 2, 3, 5, 7, 9, 10, 11], formula: '1 2 ♭3 4 5 6 ♭7 7', basis: 'Dorian + natural 7' }
+};
+
+const PHRASE_CATS = [
+  { id: 'scales', title: 'Bebop scales', blurb: 'Eight-note scales: one chromatic passing tone keeps the chord tones on beats 1 and 3, whether you climb or descend.' },
+  { id: 'major', title: 'ii–V–I (major)', blurb: 'Arpeggios, chromatic approaches, enclosures and scale fragments joining the chords.' },
+  { id: 'minor', title: 'ii–V–i (minor)', blurb: 'The same ideas on the minor ii–V–i.' },
+  { id: 'forms', title: 'Turnarounds and blues', blurb: 'Using the vocabulary on common forms.' }
+];
+
+const PHRASES = [
+  {
+    id: 'dom-bebop-updown', cat: 'scales', title: 'Dominant bebop scale: up from the root, back down', bpm: 90, strong: true,
+    scale: { root: 'G', type: 'dom' }, chart: 'G7 | G7 | G7 | G7',
+    bars: ['G1 A1 B1 C2', 'D2 E2 F2 F#2', 'G2 F#2 F2 E2', 'D2 C2 B1 A1'],
+    tip: 'Play it as steady quarter notes. The extra note (the natural 7, F♯ over G7) is the only one that is not in the Mixolydian scale. Going up or down, beats 1 and 3 are always G, B, D or F: the chord tones. Listen for how the passing note never sits on a strong beat.'
+  },
+  {
+    id: 'dom-bebop-flat7', cat: 'scales', title: 'Dominant bebop scale: down from the ♭7, climb back up', bpm: 90, strong: true,
+    scale: { root: 'G', type: 'dom' }, chart: 'G7 | G7 | G7 | G7',
+    bars: ['F2 E2 D2 C2', 'B1 A1 G1 F#1', 'G1 A1 B1 C2', 'D2 E2 F2 F#2'],
+    tip: 'Starting on the ♭7 makes the descent land on F, D, B, G on the strong beats. Turn around on the root and climb back up the same scale. This is the classic way to move through a V7 chord.'
+  },
+  {
+    id: 'maj-bebop-updown', cat: 'scales', title: 'Major bebop scale: up from the root, back down', bpm: 90, strong: true,
+    scale: { root: 'C', type: 'maj' }, chart: 'Cmaj7 | Cmaj7 | Cmaj7 | Cmaj7',
+    bars: ['C2 D2 E2 F2', 'G2 A♭2 A2 B2', 'C3 B2 A2 A♭2', 'G2 F2 E2 D2'],
+    tip: 'The added note is the ♯5 (A♭ here) between the 5th and 6th. Strong beats land on C, E, G and A, the notes of a C6 chord, so it sounds “inside” on a major chord. The 7th (B) falls on a weak beat and leads up to the next C.'
+  },
+  {
+    id: 'min-bebop-updown', cat: 'scales', title: 'Minor bebop scale: up from the root, back down', bpm: 90, strong: true,
+    scale: { root: 'D', type: 'min' }, chart: 'Dm7 | Dm7 | Dm7 | Dm7',
+    bars: ['D2 E2 F2 G2', 'A2 B2 C3 C#3', 'D3 C#3 C3 B2', 'A2 G2 F2 E2'],
+    tip: 'Dorian with the natural 7 (C♯ over Dm7) added. Beats 1 and 3 hit D, F, A and C: root, ♭3, 5th and ♭7. Compare the C♯ and C♮ so you can hear the passing tone.'
+  },
+  {
+    id: 'arp-approach', cat: 'major', title: 'Arpeggio up, chromatic approach into the next chord', bpm: 110, strong: true,
+    chart: 'Dm7 | G7 | Cmaj7 | Cmaj7',
+    bars: ['D2 F2 A2 A♭2', 'G2 F2 D2 B1', 'C2 E2 G2 A2', 'B2 G2 E2 C#2'],
+    tip: 'Beats 1 and 3 are chord tones (root–♭3–5, root–♭7–5, root–3–5). Beat 4 is the approach: A♭ drops a half step onto G, B climbs a half step to C, and C♯ climbs a half step back to D. Chromatic approaches from above and below make the changes feel connected.'
+  },
+  {
+    id: 'enclosure', cat: 'major', title: 'Enclosures: circling the target note', bpm: 110, strong: true,
+    chart: 'Dm7 | G7 | Cmaj7',
+    bars: ['D2 F2 A2 F#2', 'G2 F2 D2 B1', 'C2 G2 E2 C#2'],
+    tip: 'An enclosure surrounds the target: one note above it (a whole step), then one below (a half step), then the target. Bar 1 circles G with A and F♯, bar 2 circles C with D and B, bar 3 circles D with E and C♯. It loops, so bar 3 leads straight back into Dm7.'
+  },
+  {
+    id: 'scale-fragments', cat: 'major', title: 'ii–V–I built from bebop scale fragments', bpm: 110, strong: true,
+    chart: 'Dm7 | G7 | Cmaj7 | Cmaj7',
+    bars: ['D2 E2 F2 G2', 'F2 E2 D2 B1', 'C2 D2 E2 G2', 'A2 G2 E2 C#2'],
+    tip: 'Bar 1 climbs the first half of D minor bebop. Bar 2 runs down G dominant bebop from the ♭7 and ends on the 3rd (B), a half step below C. Bar 3 climbs from the C root, then bar 4 uses the 6th and 5th and approaches D from below. Chord tones still land on beats 1 and 3 throughout.'
+  },
+  {
+    id: 'v-to-i-run', cat: 'major', title: 'Dominant bebop run resolving to the I chord', bpm: 100, strong: true,
+    chart: 'G7 | G7 | Cmaj7 | Cmaj7',
+    bars: ['F2 E2 D2 C2', 'B1 A1 G1 B1', 'C2 E2 G2 A2', 'B2 A2 G2 F#2'],
+    tip: 'Two bars of G dominant bebop going down, finishing on B (the 3rd) so the line steps up a half step to C. Then outline Cmaj7 and come back down chromatically (A–G–F♯) to F for the repeat.'
+  },
+  {
+    id: 'minor-iivi', cat: 'minor', title: 'Minor ii–V–i: arpeggios and approach notes', bpm: 105, strong: true,
+    chart: 'Dm7♭5 | G7alt | Cm7 | Cm7',
+    bars: ['D2 F2 A♭2 F#2', 'G2 F2 D♭2 B1', 'C2 E♭2 G2 A♭2', 'B♭2 G2 E♭2 C#2'],
+    tip: 'Bar 1 outlines Dm7♭5 (D, F, A♭) and approaches G from below. Over G7alt the ♭5 (D♭) sits on beat 3, then B approaches C from a half step below. On Cm7, climb the arpeggio, add the ♭6 (A♭), and come back down the ♭7–5–♭3 before approaching D.'
+  },
+  {
+    id: 'turnaround', cat: 'forms', title: 'Turnaround: iii–vi–ii–V with chromatic approaches', bpm: 120, strong: true,
+    chart: 'Em7 | Am7 | Dm7 | G7',
+    bars: ['E2 G2 B2 B♭2', 'A2 G2 E2 C#2', 'D2 F2 A2 A♭2', 'G2 F2 D2 D#2'],
+    tip: 'One approach note per bar, alternating from above and below: B♭ into A, C♯ into D, A♭ into G and D♯ back to E. Every change is reached by a half step, and beats 1 and 3 stay on chord tones.'
+  },
+  {
+    id: 'blues-f', cat: 'forms', title: 'Blues in F: bars 1–4 with a bebop descent', bpm: 130, strong: true,
+    chart: 'F7 | B♭7 | F7 | Cm7 F7',
+    bars: ['F2 E2 E♭2 D2', 'B♭1 D2 F2 E2', 'F2 A2 C3 B♭2', 'G2 E♭2 F2 E2'],
+    tip: 'Bar 1 is the top of F dominant bebop (F, E♮, E♭, D) with the ♭7 on beat 3. Bar 2 outlines B♭7 and E leads up to F. In bar 4, Cm7 and F7 each get two beats, and the E on beat 4 leads back to F for the repeat.'
+  }
+];
+
+/* ---- builder ---- */
+function parsePhraseToken(tok) {
+  const m = /^([A-Ga-g])([#b♭♯]?)(-?\d)?(?::(\d*\.?\d+))?$/.exec(tok) || /^(r):?(\d*\.?\d+)?$/.exec(tok);
+  if (!m) throw new Error('Bad phrase token: ' + tok);
+  if (m[1] === 'r') return { rest: true, d: parseFloat(m[2] || '1') };
+  let pc = NOTE_PC[m[1].toUpperCase()];
+  if (m[2] === '#' || m[2] === '♯') pc++; else if (m[2]) pc--;
+  return { m: (parseInt(m[3]) + 1) * 12 + pc, d: m[4] ? parseFloat(m[4]) : 1 };
+}
+function phraseBarNotes(barStr) {
+  const out = []; let t = 0;
+  for (const tok of barStr.trim().split(/\s+/)) {
+    const p = parsePhraseToken(tok);
+    if (!p.rest) out.push({ off: t, d: p.d, m: p.m });
+    t += p.d;
+  }
+  return { notes: out, total: t };
+}
+/* A phrase becomes a normal song: the phrase repeats, with generated piano and drums behind it. */
+function buildPhraseSong(ph, o = {}) {
+  const repeats = clamp(o.repeats || 6, 1, 16);
+  const song = generateSong({ chart: ph.chart, style: 'walking', bpm: ph.bpm || 100, choruses: repeats, seed: 7, comp: true, drums: true, embellish: 0, title: ph.title });
+  const bass = [];
+  for (let r = 0; r < repeats; r++) {
+    ph.bars.forEach((bar, bi) => {
+      const base = (r * ph.bars.length + bi) * 4;
+      for (const n of phraseBarNotes(bar).notes) bass.push({ b: base + n.off, d: n.d * (n.d >= 1 ? 0.94 : 0.9), m: n.m, v: n.off % 2 === 0 ? 98 : 90 });
+    });
+  }
+  let lo = 127, hi = 0, sum = 0;
+  for (const n of bass) { lo = Math.min(lo, n.m); hi = Math.max(hi, n.m); sum += n.m; }
+  song.tracks[0] = { key: 'phrase-bass', ch: 0, name: 'Bass phrase', program: 33, drums: false, notes: bass, lo, hi, avg: sum / bass.length, desc: programName(33) };
+  song.title = ph.title; song.phrase = ph;
+  return song;
+}
+function transposeChartText(chart, ts) {
+  return parseChart(chart, 4).map(b => b.map(c => chordName(c, ts)).join(' ')).join(' | ');
+}
+const SCALE_LETTERS = { dom: [0, 1, 2, 3, 4, 5, 6, 6], maj: [0, 1, 2, 3, 4, 4, 5, 6], min: [0, 1, 2, 3, 4, 5, 6, 6] };
+function scaleSpelling(ph, ts) {
+  if (!ph.scale) return '';
+  const rootPc = mod12(parseRoot(ph.scale.root).pc + ts), L0 = 'CDEFGAB'.indexOf(pcName(rootPc)[0]);
+  const letters = SCALE_LETTERS[ph.scale.type];
+  return BEBOP_SCALES[ph.scale.type].degrees.map((d, i) => {
+    const L = 'CDEFGAB'[(L0 + letters[i]) % 7];
+    let acc = mod12(rootPc + d - NOTE_PC[L]); if (acc > 6) acc -= 12;
+    return L + ({ 0: '', 1: '♯', '-1': '♭', 2: '𝄪', '-2': '𝄫' }[acc] || '');
+  }).join(' ');
+}
+
 /* ===== Audio engine (Web Audio synth) ===== */
 const Audio_ = {
   ctx: null, master: null, sess: null, noiseBuf: null,
@@ -1329,12 +1493,12 @@ function chordAt(p) {
   for (const x of list) if (x.at <= off + 1e-6) c = x;
   return c;
 }
-function degreeLabel(m, ch) { return ch ? DEGREES[mod12(m - ch.pc)] : pcName(m); }
-function markerLabel(n, ch, mode) {
+function degreeLabel(m, ch, ts = 0) { return ch ? DEGREES[mod12(m - ch.pc - ts)] : pcName(m); }
+function markerLabel(n, ch, mode, ts = 0) {
   mode = mode || S.labelMode;
   if (mode === 'finger') return n.fg === 0 ? '0' : String(n.fg);
   if (mode === 'note') return pcName(n.m);
-  return degreeLabel(n.m, ch);
+  return degreeLabel(n.m, ch, ts);
 }
 
 /* ===== Renderers: fretboard, tab highway, notation, chord chart ===== */
@@ -1440,7 +1604,7 @@ function updateFretboard() {
     fbKey = key;
     drawMarkers(list.map(x => {
       const n = notes[x.i], ch = chordAt(n.b);
-      return { s: n.s, f: n.f, kind: x.kind, order: S.fretMode === 'next' ? x.order : x.order, label: markerLabel(n, ch) };
+      return { s: n.s, f: n.f, kind: x.kind, order: S.fretMode === 'next' ? x.order : x.order, label: markerLabel(n, ch, null, ts) };
     }));
   }
   return { cur, idx, next: cur + 1, chord, line, ts, p, iter };
@@ -1519,7 +1683,7 @@ function drawHighway() {
       c.fillStyle = '#10131a'; c.textAlign = 'center';
       c.font = '800 ' + Math.min(20, Math.round(h * 0.55)) + 'px system-ui';
       const big = String(nt.f);
-      const small = w > 46 ? markerLabel(nt, chordAt(nt.b)) : '';
+      const small = w > 46 ? markerLabel(nt, chordAt(nt.b), null, ts) : '';
       c.fillText(big, small ? x + w * 0.36 : x + w / 2, y + h * 0.65);
       if (small) { c.font = '700 ' + Math.min(14, Math.round(h * 0.38)) + 'px system-ui'; c.fillStyle = 'rgba(16,19,26,.8)'; c.fillText(small, x + w * 0.76, y + h * 0.62); }
       c.globalAlpha = 1;
@@ -1603,7 +1767,7 @@ function drawNtRow(c, r, ts, notes, L) {
         }
       }
       c.textAlign = 'center'; c.font = '700 13px system-ui'; c.fillStyle = '#16314f'; c.fillText(String(nt.f), x, y0 + 126);
-      c.fillStyle = '#8a8470'; c.font = '10px system-ui'; c.fillText(markerLabel(nt, chordAt(nt.b)), x, y0 + 139);
+      c.fillStyle = '#8a8470'; c.font = '10px system-ui'; c.fillText(markerLabel(nt, chordAt(nt.b), null, ts), x, y0 + 139);
     }
   }
 }
@@ -1673,16 +1837,17 @@ const BUILTIN = PRESETS.map((p, i) => ({
   id: 'b:' + p.id, title: p.name + (p.style === 'bossa' ? ' (bossa)' : ' (walking)'), builtin: true, kind: 'gen',
   opts: { title: p.name, chart: p.chart, bpm: p.bpm, style: p.style || 'walking', choruses: 3, seed: 11 + i * 7, embellish: 0.35, swing: 0.667, comp: true, drums: true }
 }));
+const PHRASE_ENTRIES = PHRASES.map(p => ({ id: 'p:' + p.id, title: p.title, builtin: true, kind: 'phrase', phraseId: p.id }));
 let userSongs = loadJSON(LKEY, []);
 let tempSongs = [];
 S.overrides = loadJSON(OKEY, {});
-const allSongs = () => BUILTIN.concat(userSongs, tempSongs);
+const allSongs = () => BUILTIN.concat(PHRASE_ENTRIES, userSongs, tempSongs);
 function persistUser() { if (!saveJSON(LKEY, userSongs)) toast('Browser storage is full or blocked — this song will only last until you close the page.'); }
 function bufToB64(buf) { const a = new Uint8Array(buf); let s = ''; for (let i = 0; i < a.length; i += 0x8000) s += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(s); }
 function b64ToBuf(b64) { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a.buffer; }
 function fillSongSelect() {
   const sel = $('songSel'); sel.innerHTML = '';
-  const groups = [['Lessons (generated)', BUILTIN], ['My songs', userSongs], ['This session', tempSongs]];
+  const groups = [['Tunes (generated walking lines)', BUILTIN], ['Lesson phrases', PHRASE_ENTRIES], ['My songs', userSongs], ['This session', tempSongs]];
   for (const [label, arr] of groups) {
     if (!arr.length) continue;
     const og = document.createElement('optgroup'); og.label = label;
@@ -1697,7 +1862,7 @@ function selectSong(id, keepPlaying) {
   const e = allSongs().find(x => x.id === id) || BUILTIN[0];
   stopPlay(true);
   let song;
-  try { song = e.kind === 'gen' ? generateSong(e.opts) : parseMidi(b64ToBuf(e.b64)); }
+  try { song = e.kind === 'gen' ? generateSong(e.opts) : e.kind === 'phrase' ? buildPhraseSong(PHRASES.find(p => p.id === e.phraseId), { repeats: 8 }) : parseMidi(b64ToBuf(e.b64)); }
   catch (err) { toast('Could not load that song: ' + err.message); return false; }
   song.title = e.title;
   let li = e.lineKey ? song.tracks.findIndex(t => t.key === e.lineKey) : -1;
@@ -1710,6 +1875,7 @@ function selectSong(id, keepPlaying) {
   else S.chordBars = detectChords(song.tracks.filter((t, i) => i !== li && !S.dups.has(i)), song.tracks[li].notes, bb, song.lengthBeats);
   const nb = Math.ceil(song.lengthBeats / bb - 1e-6);
   S.startBeat = 0; S.iterBase = 0; S.loopOn = false; S.loopFrom = 1; S.loopTo = nb; S.selEnd = false; S.ts = 0;
+  if (e.kind === 'phrase') { S.loopOn = true; S.loopTo = song.phrase.bars.length; }   // loop one pass of the phrase
   invalidateLines(); chartVersion++; NT.key = ''; fbKey = '';
   $('transpose').value = '0';
   resetScore();
@@ -1741,12 +1907,13 @@ function syncSongUI() {
   $('songChip').textContent = e.title;
   $('btnDel').disabled = !!e.builtin;
   $('btnRegen').style.display = e.kind === 'gen' ? '' : 'none';
-  $('chordText').value = e.kind === 'gen' ? e.opts.chart : chartToText(S.chordBars);
+  $('chordText').value = e.kind === 'gen' ? e.opts.chart : (e.kind === 'phrase' ? chartToText(S.chordBars.slice(0, s.phrase.bars.length)) : chartToText(S.chordBars));
   $('btnApplyChords').textContent = e.kind === 'gen' ? 'Regenerate with these chords' : 'Apply chords';
   const nb = Math.ceil(s.lengthBeats / s.barBeats - 1e-6);
   const info = [`${nb} bars · ${s.num}/${s.den} · ${Math.round(s.bpm)} BPM`];
   if (s.tempoChanges) info.push('⚠ tempo changes in the file are ignored');
   if (e.kind === 'midi') info.push('Chords were guessed from the other tracks — check them.');
+  if (e.kind === 'phrase') info.push('Lesson phrase (written in C): use Transpose or the key cycle to move it.');
   $('songInfo').textContent = info.join('  ·  ');
   $('chartNote').textContent = e.kind === 'midi' ? '(auto-detected, editable in the Song panel)' : '';
   $('loopFrom').max = $('loopTo').max = nb;
@@ -1974,7 +2141,7 @@ function frame() {
   if (n && (S.playing || S.waiting || S.paused || info.cur >= 0)) {
     const sname = pcName(S.tuning[n.s]);
     setText('nowName', noteName(n.m));
-    setText('nowInfo', `${sname} string · ${n.f === 0 ? 'open' : 'fret ' + n.f + ' · finger ' + n.fg}${info.chord ? ' · ' + (degreeLabel(n.m, info.chord) === 'R' ? 'root' : 'degree ' + degreeLabel(n.m, info.chord)) : ''}`);
+    setText('nowInfo', `${sname} string · ${n.f === 0 ? 'open' : 'fret ' + n.f + ' · finger ' + n.fg}${info.chord ? ' · ' + (degreeLabel(n.m, info.chord, info.ts) === 'R' ? 'root' : 'degree ' + degreeLabel(n.m, info.chord, info.ts)) : ''}`);
     const nx = info.line.notes[info.cur + 1];
     setText('nextInfo', nx ? `Next: ${noteName(nx.m)} (${pcName(S.tuning[nx.s])} string, ${nx.f === 0 ? 'open' : 'fret ' + nx.f}, finger ${nx.fg})` : '');
   } else { setText('nowName', '–'); setText('nowInfo', 'Press Start'); setText('nextInfo', ''); }
@@ -2087,6 +2254,43 @@ function createGen(save) {
   if (save) { userSongs.push(entry); persistUser(); } else tempSongs.push(entry);
   $('dlgGen').close(); fillSongSelect();
   if (selectSong(entry.id)) { fillSongSelect(); }
+}
+
+/* ---------- lessons ---------- */
+function lessonKeyOptions() {
+  const sel = $('lsKey'), cur = sel.value || '0'; sel.innerHTML = '';
+  for (const v of [0, 5, -2, 3, -4, 1, 6, -1, 4, -3, 2, -5]) { // circle of fourths from C
+    const o = document.createElement('option'); o.value = v; o.textContent = pcName(v) + (v === 0 ? ' (as written)' : ''); sel.appendChild(o);
+  }
+  sel.value = cur;
+}
+function renderLessons() {
+  const ts = parseInt($('lsKey').value) || 0, box = $('lsList'); box.innerHTML = '';
+  for (const cat of PHRASE_CATS) {
+    const h = document.createElement('h3'); h.textContent = cat.title; box.appendChild(h);
+    const p = document.createElement('div'); p.className = 'small'; p.textContent = cat.blurb; box.appendChild(p);
+    for (const ph of PHRASES.filter(x => x.cat === cat.id)) {
+      const d = document.createElement('div'); d.className = 'lesson';
+      const sc = ph.scale ? `<div class="small"><b>${BEBOP_SCALES[ph.scale.type].name}</b> in this key: ${scaleSpelling(ph, ts)}</div>` : '';
+      d.innerHTML = `<div class="lh"><b></b><button class="primary" data-id="${ph.id}">Practice</button></div>
+        <div class="lchords">${transposeChartText(ph.chart, ts)}</div>${sc}
+        <div class="small">${ph.strong ? '<span class="tag">chord tones on beats 1 &amp; 3</span> ' : ''}${ph.bars.length} bars · ${ph.bpm} BPM</div>
+        <div class="ltip"></div>`;
+      d.querySelector('b').textContent = ph.title; d.querySelector('.ltip').textContent = ph.tip;
+      box.appendChild(d);
+    }
+  }
+}
+function openLessons() { lessonKeyOptions(); renderLessons(); if (!$('dlgLessons').open) $('dlgLessons').showModal(); }
+function startLesson(id) {
+  const k = parseInt($('lsKey').value) || 0;
+  if (!selectSong('p:' + id)) return;
+  S.ts = k; $('transpose').value = String(k);
+  S.keyStep = $('lsAll12').checked ? 5 : 0; $('keyCycle').value = String(S.keyStep);
+  if ($('lsDeg').checked) { S.labelMode = 'degree'; $('labelMode').value = 'degree'; }
+  S.speed = parseInt($('lsSpeed').value) / 100; $('speed').value = Math.round(S.speed * 100); updateSpeedLabel();
+  invalidateLines(); fbKey = ''; NT.key = ''; syncLoopUI(); saveSettings();
+  $('dlgLessons').close();
 }
 
 /* ---------- microphone ---------- */
@@ -2206,6 +2410,10 @@ function wire() {
     const p = PRESETS.find(x => x.id === $('genPreset').value); if (!p) return;
     $('genChart').value = p.chart; $('genBpm').value = p.bpm; $('genStyle').value = p.style || 'walking';
   });
+  on('btnLessons', 'click', openLessons);
+  on('lsClose', 'click', () => $('dlgLessons').close());
+  on('lsKey', 'change', renderLessons);
+  on('lsList', 'click', (e) => { const b = e.target.closest('button[data-id]'); if (b) startLesson(b.dataset.id); });
   on('btnHelp', 'click', () => $('dlgHelp').showModal());
   on('helpClose', 'click', () => $('dlgHelp').close());
   on('btnMic', 'click', toggleMic);

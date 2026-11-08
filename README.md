@@ -20,6 +20,12 @@ Everything lives in one file, `index.html`. There is no build step and there are
 - **Chords:** guessed from the other tracks, and editable in the Song panel.
 - **Walking-bass generator:** type a chord chart such as `Dm7 | G7 | Cmaj7`, or pick a preset (jazz blues, ii–V–I, Autumn Leaves changes, rhythm changes, minor blues, bossa). You get a walking, two-feel or bossa line with piano and drums. "New variation" rolls a different line over the same chords, and you can export the result as MIDI.
 
+**Lessons**
+- **Lesson phrases:** 11 short bebop-style phrases, all written in C and playable in any key. Press **Lessons**, pick a key, and the phrase loops with piano and drums behind it.
+- **Bebop scales:** dominant (Mixolydian + natural 7), major (+ ♯5) and minor/Dorian (+ natural 7), each played up from the root and back down. The passing tone keeps the chord tones on beats 1 and 3.
+- **Building blocks:** arpeggios with chromatic approach notes, enclosures, scale fragments across a ii–V–I, a minor ii–V–i, a iii–vi–ii–V turnaround and a blues phrase.
+- Each phrase comes with a short note on what to listen for. Turn on chord-degree labels (R, 3, 5, ♭7…) to see how the line outlines the chords, and use "all 12 keys" to move up a fourth every pass.
+
 **Practice tools**
 - Loop any bar range, slow the tempo down to 25%, and use a count-in and metronome.
 - Transpose, or have the loop move up a fourth (or another interval) each pass to cover all 12 keys. Fingering is recalculated for each key.
@@ -44,7 +50,7 @@ Open `index.html` in Chrome or Edge. Press **Start** (or `Space`).
 | `[` `]` | Slower / faster |
 | `M` | Mute bass |
 
-Click a bar in the notation or chord chart to set the loop start, then click a second bar to set the end.
+Click a bar in the notation or chord chart to set the loop start, then click a second bar to set the end. The phrases are also listed in the song menu under "Lesson phrases".
 
 ### Listening setup
 - An audio interface connected to your bass gives the best results. A microphone near the amp also works.
