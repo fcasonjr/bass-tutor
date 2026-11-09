@@ -202,6 +202,7 @@ dialog#dlgLessons{max-width:780px}
       <label class="col"><span>Bass line</span><input type="range" id="vBass" min="0" max="100" value="85"></label>
       <label class="col"><span>Harmony (piano / other instruments)</span><input type="range" id="vHarm" min="0" max="100" value="55"></label>
       <label class="col"><span>Drums</span><input type="range" id="vDrums" min="0" max="100" value="70"></label>
+      <label class="col"><span>Room reverb <small>(sound v2)</small></span><input type="range" id="vRev" min="0" max="100" value="25"></label>
       <label class="col"><span>Click</span><input type="range" id="vClick" min="0" max="100" value="50"></label>
       <label class="col"><span>Master</span><input type="range" id="vMaster" min="0" max="100" value="90"></label>
       <div class="inline"><button id="btnMuteBass">Mute bass (play it yourself)</button><button id="btnSolo">Bass only</button></div>
@@ -1206,24 +1207,42 @@ function scaleSpelling(ph, ts) {
 /* ===== Audio engine (Web Audio synth) ===== */
 const Audio_ = {
   ctx: null, master: null, sess: null, noiseBuf: null,
-  vol: { bass: 0.85, harm: 0.55, drums: 0.7, click: 0.5, master: 0.9 },
+  vol: { bass: 0.85, harm: 0.55, drums: 0.7, click: 0.5, master: 0.9, reverb: 0.25 },
+  human: { timing: 0.005, vel: 0.10 },   // random delay (s, 0..timing) and +/- velocity fraction for keys and drums
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const C = window.AudioContext || window.webkitAudioContext;
     this.ctx = new C({ latencyHint: 'interactive' });
-    const comp = this.ctx.createDynamicsCompressor();
+    this._build();
+  },
+  _build() {
+    const c = this.ctx;
+    const comp = c.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.2;
-    this.master = this.ctx.createGain(); this.master.gain.value = this.vol.master;
-    this.master.connect(comp); comp.connect(this.ctx.destination);
-    const len = this.ctx.sampleRate * 1.5, b = this.ctx.createBuffer(1, len, this.ctx.sampleRate), d = b.getChannelData(0);
+    this.master = c.createGain(); this.master.gain.value = this.vol.master;
+    this.master.connect(comp); comp.connect(c.destination);
+    const len = c.sampleRate * 1.5, b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.noiseBuf = b;
+    // shared "room" bus for keys + drums: dry straight to master, wet through a generated-IR convolver
+    this.fx = c.createGain(); this.fx.connect(this.master);
+    this.wet = null;
+    try {
+      const sr = c.sampleRate, n = Math.floor(sr * 1.3), ir = c.createBuffer(2, n, sr), a = 1 - Math.exp(-2 * Math.PI * 5000 / sr);
+      for (let ch = 0; ch < 2; ch++) {
+        const x = ir.getChannelData(ch); let y = 0;
+        for (let i = 0; i < n; i++) { y += a * ((Math.random() * 2 - 1) - y); x[i] = y * Math.pow(1 - i / n, 3); }
+      }
+      const conv = c.createConvolver(); conv.buffer = ir;
+      this.wet = c.createGain(); this.wet.gain.value = this.vol.reverb;
+      this.fx.connect(conv); conv.connect(this.wet); this.wet.connect(this.master);
+    } catch (e) { this.wet = null; }
   },
   now() { return this.ctx ? this.ctx.currentTime : 0; },
   newSession() {
     this.killSession();
     const c = this.ctx, s = {};
-    for (const k of ['bass', 'harm', 'drums', 'click']) { s[k] = c.createGain(); s[k].gain.value = this.vol[k]; s[k].connect(this.master); }
+    for (const k of ['bass', 'harm', 'drums', 'click']) { s[k] = c.createGain(); s[k].gain.value = this.vol[k]; s[k].connect(k === 'harm' || k === 'drums' ? this.fx : this.master); }
     this.sess = s;
   },
   killSession() {
@@ -1236,7 +1255,9 @@ const Audio_ = {
   setVol(k, v) {
     this.vol[k] = v;
     if (!this.ctx) return;
-    if (k === 'master') this.master.gain.value = v; else if (this.sess) this.sess[k].gain.value = v;
+    if (k === 'master') this.master.gain.value = v;
+    else if (k === 'reverb') { if (this.wet) this.wet.gain.value = v; }
+    else if (this.sess) this.sess[k].gain.value = v;
   },
   /* pitched voices ---------------------------------------------------- */
   bass(m, t, dur, vel, dest) {
@@ -1259,25 +1280,53 @@ const Audio_ = {
     flt.connect(g); g.connect(dest);
     for (const o of [o1, o2, o3]) { o.start(t); o.stop(end + 0.5); }
   },
+  /* electric piano: FM pair (1:1) with a fast-decaying index, bell "tine", sub-octave, low-passed */
   harm(m, t, dur, vel, dest) {
-    const c = this.ctx, f = 440 * Math.pow(2, (m - 69) / 12), v = vel / 127;
-    const o1 = c.createOscillator(), o2 = c.createOscillator();
-    o1.type = 'triangle'; o2.type = 'sine'; o1.frequency.value = f; o2.frequency.value = f * 2.003;
-    const g2 = c.createGain(); g2.gain.value = 0.25;
-    const g = c.createGain(), pk = 0.16 * v;
-    const end = t + Math.max(0.08, Math.min(dur, 3));
-    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(pk, t + 0.01);
-    g.gain.setTargetAtTime(pk * 0.35, t + 0.02, 0.18);
-    g.gain.setTargetAtTime(0.0001, end, 0.06);
-    o1.connect(g); o2.connect(g2); g2.connect(g); g.connect(dest);
-    o1.start(t); o2.start(t); o1.stop(end + 0.5); o2.stop(end + 0.5);
+    const c = this.ctx, f = 440 * Math.pow(2, (m - 69) / 12), v = vel / 127, det = (Math.random() - 0.5) * 8;
+    const car = c.createOscillator(), mod = c.createOscillator(), sub = c.createOscillator();
+    car.type = mod.type = sub.type = 'sine';
+    car.frequency.value = f; mod.frequency.value = f; sub.frequency.value = f / 2;
+    car.detune.value = det; mod.detune.value = det; sub.detune.value = det;
+    const idx = (0.9 + 2.6 * v) * f, mg = c.createGain();            // harder = brighter
+    mg.gain.setValueAtTime(idx, t); mg.gain.setTargetAtTime(idx * 0.12, t + 0.004, 0.10 + 0.25 * (1 - v) * 0.4);
+    mod.connect(mg); mg.connect(car.frequency);
+    const pk = 0.09 * (0.3 + 0.7 * v), tau = clamp(0.95 - (m - 45) * 0.014, 0.22, 0.95);   // lower notes ring longer
+    const end = t + Math.max(0.1, Math.min(dur, 3));
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(pk, t + 0.004);
+    g.gain.setTargetAtTime(pk * 0.22, t + 0.012, tau);
+    g.gain.setTargetAtTime(0.0001, end, 0.07);
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.5; lp.frequency.value = 2600 + 3200 * v;
+    const src = [car, mod, sub], oscs = [car, mod, sub];
+    car.connect(g);
+    const sg = c.createGain(); sg.gain.value = 0.2; sub.connect(sg); sg.connect(g);
+    if (f * 7 < 9000) {                                              // short high tine for the bell attack
+      const tn = c.createOscillator(), tg = c.createGain(); tn.type = 'sine'; tn.frequency.value = f * 7; tn.detune.value = det;
+      tg.gain.setValueAtTime(0.18 * v, t); tg.gain.setTargetAtTime(0.0001, t + 0.002, 0.03);
+      tn.connect(tg); tg.connect(g); oscs.push(tn);
+    }
+    g.connect(lp); lp.connect(dest);
+    for (const o of oscs) { o.start(t); o.stop(end + 0.6); }
   },
-  noise(t, dur, type, f, q, peak, dest, decay) {
+  noise(t, dur, type, f, q, peak, dest, decay, attack = 0) {
     const c = this.ctx, s = c.createBufferSource(); s.buffer = this.noiseBuf;
     const fl = c.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
-    const g = c.createGain(); g.gain.setValueAtTime(peak, t); g.gain.setTargetAtTime(0.0001, t, decay);
+    const g = c.createGain();
+    if (attack > 0) { g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(peak, t + attack); } else g.gain.setValueAtTime(peak, t);
+    g.gain.setTargetAtTime(0.0001, t + attack, decay);
     s.connect(fl); fl.connect(g); g.connect(dest);
-    s.start(t, Math.random()); s.stop(t + dur);
+    s.start(t, Math.random() * Math.max(0, 1.45 - dur)); s.stop(t + dur);
+  },
+  /* metallic cluster: inharmonic SINE partials (tonal, bell-like), each decaying at its own rate; higher ones die first */
+  metal(t, freqs, dur, peak, dest, decay) {
+    const c = this.ctx, n = freqs.length, hf = c.createBiquadFilter();
+    hf.type = 'highpass'; hf.frequency.value = 1500; hf.Q.value = 0.5; hf.connect(dest);
+    freqs.forEach((f0, i) => {
+      const o = c.createOscillator(), g = c.createGain(), d = decay * (1 - 0.1 * i);
+      o.type = 'sine'; o.frequency.value = f0 * (1 + (Math.random() - 0.5) * 0.006);
+      g.gain.setValueAtTime(peak * (1 - 0.08 * i) / n * 2, t); g.gain.setTargetAtTime(0.0001, t + 0.001, Math.max(0.006, d));
+      o.connect(g); g.connect(hf); o.start(t); o.stop(t + dur);
+    });
   },
   tone(t, f0, f1, dur, peak, dest, type = 'sine') {
     const c = this.ctx, o = c.createOscillator(); o.type = type;
@@ -1286,16 +1335,37 @@ const Audio_ = {
     o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.1);
   },
   drum(m, t, vel, dest) {
-    const v = vel / 127;
-    if (m === 35 || m === 36) { this.tone(t, 130, 42, 0.25, 0.9 * v + 0.1, dest); this.noise(t, 0.03, 'highpass', 2500, 0.7, 0.12 * v, dest, 0.006); }
-    else if (m === 38 || m === 40) { this.noise(t, 0.25, 'bandpass', 2200, 0.8, 0.5 * v, dest, 0.05); this.tone(t, 220, 150, 0.12, 0.35 * v, dest, 'triangle'); }
+    const v = vel / 127, HAT = [3400, 4550, 5800, 7150, 8600, 9800], RIDE = [2480, 3150, 4010, 5230, 6350, 7730, 9100], CRASH = [1800, 2650, 3600, 4900, 6300, 7900, 9500];
+    if (m === 35 || m === 36) {                                      // kick: audible on small speakers (nothing below ~60 Hz)
+      this.tone(t, 150, 60, 0.30, 0.8 * v + 0.1, dest);
+      this.tone(t, 260, 95, 0.18, 0.5 * v, dest, 'triangle');
+      this.noise(t, 0.03, 'bandpass', 3200, 0.8, 0.22 * v, dest, 0.005);
+    }
+    else if (m === 38 || m === 40) {                                  // snare: soft brush swish + quiet body
+      this.noise(t, 0.32, 'bandpass', 3400, 0.6, 0.42 * v, dest, 0.07, 0.012);
+      this.noise(t, 0.2, 'highpass', 6500, 0.7, 0.10 * v, dest, 0.05, 0.008);
+      this.tone(t, 200, 135, 0.14, 0.22 * v, dest);
+    }
     else if (m === 37 || m === 39) { this.noise(t, 0.05, 'bandpass', 1800, 2, 0.45 * v, dest, 0.01); this.tone(t, 520, 400, 0.05, 0.25 * v, dest); }
-    else if (m === 42) this.noise(t, 0.08, 'highpass', 7500, 0.7, 0.28 * v, dest, 0.015);
-    else if (m === 44) this.noise(t, 0.08, 'highpass', 6500, 0.7, 0.22 * v, dest, 0.014);
-    else if (m === 46) this.noise(t, 0.5, 'highpass', 7000, 0.7, 0.26 * v, dest, 0.12);
-    else if (m === 51 || m === 59 || m === 53 || m === 56) { this.noise(t, 0.7, 'bandpass', 8200, 1.1, 0.30 * v, dest, 0.16); this.noise(t, 0.05, 'highpass', 5000, 0.7, 0.2 * v, dest, 0.01); }
-    else if (m === 49 || m === 57 || m === 55 || m === 52) this.noise(t, 1.4, 'highpass', 5200, 0.6, 0.30 * v, dest, 0.35);
-    else if ([41, 43, 45, 47, 48, 50].includes(m)) { const f = 75 + (m - 41) * 17; this.tone(t, f * 1.5, f, 0.35, 0.7 * v, dest); }
+    else if (m === 42) { this.metal(t, HAT, 0.1, 0.34 * v, dest, 0.014); this.noise(t, 0.02, 'bandpass', 9000, 1.5, 0.05 * v, dest, 0.004); }
+    else if (m === 44) { this.metal(t, HAT, 0.1, 0.26 * v, dest, 0.016); }
+    else if (m === 46) { this.metal(t, HAT, 0.6, 0.30 * v, dest, 0.14); this.noise(t, 0.03, 'bandpass', 9000, 1.5, 0.04 * v, dest, 0.006); }
+    else if (m === 51 || m === 59 || m === 53 || m === 56) {          // ride: tonal partials + clear ping + faint stick tick (no noise wash)
+      this.metal(t, RIDE, 1.2, 0.17 * v, dest, 0.30);
+      this.tone(t, 4300, 4200, 0.4, 0.035 * v, dest);
+      this.noise(t, 0.02, 'bandpass', 6500, 1.5, 0.06 * v, dest, 0.004);
+    }
+    else if (m === 49 || m === 57 || m === 55 || m === 52) { this.metal(t, CRASH, 1.8, 0.36 * v, dest, 0.5); this.noise(t, 1.0, 'highpass', 6000, 0.6, 0.04 * v, dest, 0.3, 0.01); }
+    else if ([41, 43, 45, 47, 48, 50].includes(m)) {                  // toms
+      const f = 75 + (m - 41) * 17;
+      this.tone(t, f * 1.5, f, 0.35, 0.7 * v, dest); this.tone(t, f * 2.2, f * 1.4, 0.15, 0.2 * v, dest, 'triangle');
+      this.noise(t, 0.03, 'bandpass', 1500, 1, 0.12 * v, dest, 0.006);
+    }
+    else if (m >= 60 && m <= 64) {                                    // bongos / congas
+      const f = [420, 330, 300, 240, 190][m - 60];
+      this.tone(t, f * 1.25, f, 0.22, 0.3 * v, dest); this.noise(t, 0.03, 'bandpass', 2200, 1.2, 0.18 * v, dest, 0.006);
+    }
+    else if (m === 54 || m === 69 || m === 70 || m === 82) this.noise(t, 0.12, 'bandpass', 6200, 1, 0.3 * v, dest, 0.03, 0.012);   // shaker / maracas / cabasa / tambourine
     else this.noise(t, 0.05, 'highpass', 4000, 1, 0.2 * v, dest, 0.01);
   },
   click(t, accent) {
@@ -1308,8 +1378,10 @@ const Audio_ = {
   /* schedule one note of a given role */
   play(role, m, t, dur, vel) {
     if (!this.sess) return;
-    if (role === 'bass') this.bass(m, t, dur, vel, this.sess.bass);
-    else if (role === 'harm') this.harm(m, t, dur, vel, this.sess.harm);
+    if (role === 'bass') { this.bass(m, t, dur, vel, this.sess.bass); return; }
+    const h = this.human;                                             // keys and drums only: a touch of random timing and volume
+    t += Math.random() * h.timing; vel = clamp(vel * (1 + (Math.random() * 2 - 1) * h.vel), 1, 127);
+    if (role === 'harm') this.harm(m, t, dur, vel, this.sess.harm);
     else if (role === 'drums') this.drum(m, t, vel, this.sess.drums);
   },
   preview(m) {
@@ -2249,7 +2321,7 @@ function syncSettingsUI() {
   $('gate').value = Math.round(Mic.gate * 1000); $('gateLbl').textContent = (Mic.gate * 1000).toFixed(0);
   $('speed').value = Math.round(S.speed * 100); $('keyCycle').value = S.keyStep; $('keyHold').value = S.keyHold; $('rampSel').value = S.ramp; $('wait').checked = S.wait;
   $('vBass').value = Audio_.vol.bass * 100; $('vHarm').value = Audio_.vol.harm * 100; $('vDrums').value = Audio_.vol.drums * 100;
-  $('vClick').value = Audio_.vol.click * 100; $('vMaster').value = Audio_.vol.master * 100;
+  $('vClick').value = Audio_.vol.click * 100; $('vMaster').value = Audio_.vol.master * 100; $('vRev').value = Audio_.vol.reverb * 100;
   setView(S.view);
 }
 function setView(v) {
@@ -2495,7 +2567,7 @@ function wire() {
   on('avoidOpen', 'change', () => { S.avoidOpen = $('avoidOpen').checked; fretRelated(); });
   on('octave', 'change', () => { S.octave = parseInt($('octave').value); fretRelated(); if (S.playing) retime(); });
   on('zoom', 'input', () => { S.zoom = parseInt($('zoom').value); saveSettings(); });
-  [['vBass', 'bass'], ['vHarm', 'harm'], ['vDrums', 'drums'], ['vClick', 'click'], ['vMaster', 'master']].forEach(([id, k]) =>
+  [['vBass', 'bass'], ['vHarm', 'harm'], ['vDrums', 'drums'], ['vClick', 'click'], ['vMaster', 'master'], ['vRev', 'reverb']].forEach(([id, k]) =>
     on(id, 'input', () => { Audio_.setVol(k, $(id).value / 100); saveSettings(); }));
   let bassMuted = false, soloed = null;
   const muteBass = () => {
